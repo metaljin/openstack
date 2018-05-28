@@ -22,13 +22,18 @@ from trove.common import cfg
 from trove.common.i18n import _
 from trove.common.remote import create_swift_client
 from trove.common.strategies.storage import base
+import ConfigParser
+
+guest_conf = ConfigParser.ConfigParser()
+guest_conf.read('/etc/trove/conf.d/guest_info.conf')
+tenant_id = guest_conf.get("DEFAULT", "tenant_id")
 
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 
 CHUNK_SIZE = CONF.backup_chunk_size
 MAX_FILE_SIZE = CONF.backup_segment_max_size
-BACKUP_CONTAINER = CONF.backup_swift_container
+BACKUP_CONTAINER = CONF.backup_swift_container + tenant_id
 
 
 class DownloadError(Exception):
@@ -68,24 +73,12 @@ class StreamReader(object):
         return '%s/%s_' % (self.container, self.base_filename)
 
     def read(self, chunk_size=CHUNK_SIZE):
-        if self.end_of_segment:
-            self.segment_length = 0
-            self.segment_checksum = hashlib.md5()
-            self.end_of_segment = False
-
-        # Upload to a new file if we are starting or too large
-        if self.segment_length > (self.max_file_size - chunk_size):
-            self.file_number += 1
-            self.end_of_segment = True
-            return ''
-
         chunk = self.stream.read(chunk_size)
         if not chunk:
             self.end_of_file = True
             return ''
 
         self.segment_checksum.update(chunk)
-        self.segment_length += len(chunk)
         return chunk
 
 
@@ -117,56 +110,26 @@ class SwiftStorage(base.Storage):
         url = self.connection.url
         # Full location where the backup manifest is stored
         location = "%s/%s/%s" % (url, BACKUP_CONTAINER, filename)
-
+        headers = {'X-Object-Manifest': stream_reader.prefix}
         # Read from the stream and write to the container in swift
         while not stream_reader.end_of_file:
-            etag = self.connection.put_object(BACKUP_CONTAINER,
-                                              stream_reader.segment,
+            self.connection.put_object(BACKUP_CONTAINER,
+                                              filename,
                                               stream_reader)
 
             segment_checksum = stream_reader.segment_checksum.hexdigest()
-
-            # Check each segment MD5 hash against swift etag
-            # Raise an error and mark backup as failed
-            if etag != segment_checksum:
-                LOG.error(_("Error saving data segment to swift. "
-                          "ETAG: %(tag)s Segment MD5: %(checksum)s."),
-                          {'tag': etag, 'checksum': segment_checksum})
-                return False, "Error saving data to Swift!", None, location
-
-            swift_checksum.update(segment_checksum)
-
-        # Create the manifest file
-        # We create the manifest file after all the segments have been uploaded
-        # so a partial swift object file can't be downloaded; if the manifest
-        # file exists then all segments have been uploaded so the whole backup
-        # file can be downloaded.
-        headers = {'X-Object-Manifest': stream_reader.prefix}
-        # The etag returned from the manifest PUT is the checksum of the
-        # manifest object (which is empty); this is not the checksum we want
-        self.connection.put_object(BACKUP_CONTAINER,
-                                   filename,
-                                   contents='',
-                                   headers=headers)
-
         resp = self.connection.head_object(BACKUP_CONTAINER, filename)
         # swift returns etag in double quotes
         # e.g. '"dc3b0827f276d8d78312992cc60c2c3f"'
         etag = resp['etag'].strip('"')
-
-        # Check the checksum of the concatenated segment checksums against
-        # swift manifest etag.
-        # Raise an error and mark backup as failed
-        final_swift_checksum = swift_checksum.hexdigest()
-        if etag != final_swift_checksum:
+        if etag != segment_checksum:
             LOG.error(
                 _("Error saving data to swift. Manifest "
                   "ETAG: %(tag)s Swift MD5: %(checksum)s"),
-                {'tag': etag, 'checksum': final_swift_checksum})
+                {'tag': etag, 'checksum': segment_checksum})
             return False, "Error saving data to Swift!", None, location
-
         return (True, "Successfully saved data to Swift!",
-                final_swift_checksum, location)
+                etag, location)
 
     def _explodeLocation(self, location):
         storage_url = "/".join(location.split('/')[:-2])
