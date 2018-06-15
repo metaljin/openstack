@@ -28,8 +28,11 @@ from trove.common.remote import create_swift_client
 from trove.common import stream_codecs
 from trove.guestagent.common import operating_system
 from trove.guestagent.common.operating_system import FileMode
+import ConfigParser
 
-
+guest_conf = ConfigParser.ConfigParser()
+guest_conf.read('/etc/trove/conf.d/guest_info.conf')
+tenant_id = guest_conf.get("DEFAULT", "tenant_id")
 LOG = logging.getLogger(__name__)
 CONF = cfg.CONF
 
@@ -165,7 +168,7 @@ class GuestLog(object):
 
     def get_container_name(self, force=False):
         if not self._container_name or force:
-            container_name = CONF.guest_log_container_name
+            container_name = CONF.guest_log_container_name + '_' + tenant_id
             try:
                 self.swift_client.get_container(container_name, prefix='dummy')
             except ClientException as ex:
