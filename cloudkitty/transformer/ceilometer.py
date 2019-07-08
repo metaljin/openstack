@@ -66,10 +66,18 @@ class CeilometerTransformer(transformer.BaseTransformer):
         'port_id': ['port_id'],
     }
 
+    traffic_map = {
+        'host' : ['host'],
+        'label_id' : ['label_id'],
+        'time': ['time'],
+    }  
+    
+    radosgw_usage_map = {}   
+    
     metadata_item = 'metadata'
 
     def _strip_compute(self, data):
-        res_data = self.generic_strip('compute', data)
+        res_data = self.generiradosgw_usage_map = {}c_strip('compute', data)
         res_data['instance_id'] = data.resource_id
         res_data['project_id'] = data.project_id
         res_data['user_id'] = data.user_id
@@ -105,3 +113,16 @@ class CeilometerTransformer(transformer.BaseTransformer):
         res_data['project_id'] = data.project_id
         res_data['floatingip_id'] = data.resource_id
         return res_data
+    
+    def _strip_traffic(self, data):
+        res_data = self.generic_strip('traffic', data)
+        res_data['project_id'] = data.project_id
+        res_data['label_id'] = data.resource_id
+        return res_data
+    
+    def _strip_radosgw_usage(self, data):
+        res_data = self.generic_strip('radosgw_usage_size', data)
+        res_data['radosgw_id'] = data.resource_id
+        res_data['project_id'] = data.project_id
+        return res_data
+
