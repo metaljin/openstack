@@ -318,3 +318,57 @@ class CeilometerCollector(collector.BaseCollector):
                                             'network.floating')
         return self.t_cloudkitty.format_service('network.floating',
                                                 floating_data)
+    def get_traffic(self, start, end=None, project_id=None, q_filter=None):
+        active_traffic_stats = self.resources_stats('bandwidth',
+                                                start,
+                                                end,
+                                                project_id,
+                                                q_filter)
+        traffic_data = []
+        for traffic_stat in active_traffic_stats:
+            label_id = traffic_stat.groupby['resource_id']
+            if not self._cacher.has_resource_detail('traffic',
+                                                    label_id):
+                raw_resource = self._conn.resources.get(label_id)
+                traffic = self.t_ceilometer.strip_resource_data(
+                    'traffic',
+                    raw_resource)
+                self._cacher.add_resource_detail('traffic',
+                                                 label_id,
+                                                 traffic)
+            traffic = self._cacher.get_resource_detail('traffic',
+                                                   label_id)
+            traffic_gb = traffic_stat.sum / 1073741824.0
+            traffic["traffic_size"] = traffic_gb
+            traffic_data.append(self.t_cloudkitty.format_item(traffic,
+                                                         'GB',
+                                                         traffic_gb))
+        if not traffic_data:
+            raise collector.NoDataCollected(self.collector_name, 'traffic')
+        return self.t_cloudkitty.format_service('traffic', traffic_data)
+
+    def get_radosgw_usage(self,
+                          start,
+                          end=None,
+                          project_id=None,
+                          q_filter=None):
+        active_rgw_stats = self.resources_stats('radosgw.objects.size', start,
+                                                end, project_id, q_filter)
+        rgw_data = []
+        for rgw_stats in active_rgw_stats:
+            rgw_id = rgw_stats.groupby['resource_id']
+            if not self._cacher.has_resource_detail('radosgw.usage', rgw_id):
+                raw_resource = self._conn.resources.get(rgw_id)
+                rgw = self.t_ceilometer.strip_resource_data('radosgw.usage',
+                                                            raw_resource)
+                self._cacher.add_resource_detail('radosgw.usage', rgw_id, rgw)
+            rgw = self._cacher.get_resource_detail('radosgw.usage', rgw_id)
+            rgw_size = rgw_stats.max / 1073741824.0
+            rgw["radosgw_size"] = rgw_size
+            rgw_data.append(self.t_cloudkitty.format_item(
+                rgw, 'GB', rgw_size))
+        if not rgw_data:
+            raise collector.NoDataCollected(self.collector_name,
+                                            'radosgw.usage')
+        return self.t_cloudkitty.format_service('radosgw.usage', rgw_data)
+
