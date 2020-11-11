@@ -344,11 +344,19 @@ class AuditMiddleware(object):
         self._cadf_audit = OpenStackAuditApi(conf.get('audit_map_file'))
 
         transport_aliases = self._get_aliases(cfg.CONF.project)
+        if conf.get('audit_topics'):
+            topics=[x.strip() for x in
+                                 conf.get('audit_topics', '').split(',')]
+        else:
+            topics=['audit']
         if messaging:
             self._notifier = oslo_messaging.Notifier(
                 oslo_messaging.get_transport(cfg.CONF,
-                                             aliases=transport_aliases),
-                os.path.basename(sys.argv[0]))
+                                             aliases=transport_aliases,
+                                             url=conf.get('audit_transport_url')),
+                os.path.basename(sys.argv[0]),
+                driver=conf.get('audit_driver') or 'messaging',
+                topics=topics)
 
     def _emit_audit(self, context, event_type, payload):
         """Emit audit notification
