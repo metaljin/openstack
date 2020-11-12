@@ -11,7 +11,6 @@
     }
   },
   "mappings" : {
-    "doc" : {
       "properties" : {
         "@timestamp" : {
           "type" : "date"
@@ -339,4 +338,3 @@
       }
     }
   }
-}
